@@ -449,6 +449,8 @@ function renderStaff() {
 }
 
 function renderStaffCharts() {
+  destroyChartIfExists('chartPositions');
+  destroyChartIfExists('chartDriverStatus');
   const d = DATA.drivers;
   const positions = {};
   d.forEach(x => { if(x.position) positions[x.position]=(positions[x.position]||0)+1; });
@@ -556,7 +558,8 @@ function destroyChartIfExists(canvasId) {
 function destroyAllCharts() {
   const chartIds = [
     'chartDashVehicle', 'chartDashStaff', 'chartDashEfficiency', 
-    'chartDashReinf', 'chartDashSupplier', 'chartEfficiency', 'chartOpStatus'
+    'chartDashReinf', 'chartDashSupplier', 'chartEfficiency', 'chartOpStatus',
+    'chartPositions', 'chartDriverStatus'
   ];
   chartIds.forEach(destroyChartIfExists);
 }
@@ -674,9 +677,9 @@ async function syncGoogleSheetRealtime(silent = false) {
     const workbook = XLSX.read(data, {type: 'array', cellDates: true, cellNF: false, cellText: false});
     
     processAndApplyWorkbook(workbook);
-    if (!silent) {
-      alert('Đồng bộ toàn bộ dữ liệu từ Google Sheet Realtime thành công!');
-    }
+    // if (!silent) {
+    //   alert('Đồng bộ toàn bộ dữ liệu từ Google Sheet Realtime thành công!');
+    // }
   } catch (error) {
     console.error('Realtime Sync error:', error);
     if (statusTime) {
