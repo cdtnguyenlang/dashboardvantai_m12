@@ -7,6 +7,8 @@
   <title>GHN Operations Dashboard - Hệ Thống Quản Lý Vận Hành</title>
   <meta name="description" content="Hệ thống quản lý vận hành Giao Hàng Nhanh - Vùng Hồ Chí Minh">
   <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://docs.google.com https://docs.googleusercontent.com; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -44,6 +46,12 @@
         </a>
         <a class="nav-item" data-page="efficiency" onclick="navigateTo('efficiency')">
           <span class="nav-icon">📊</span> Hiệu suất xe
+        </a>
+        <a class="nav-item" data-page="ontime" onclick="navigateTo('ontime')">
+          <span class="nav-icon">⏱️</span> Ontime
+        </a>
+        <a class="nav-item" data-page="btbd" onclick="navigateTo('btbd')">
+          <span class="nav-icon">🔧</span> BTBD
         </a>
       </div>
       <div class="nav-section">
@@ -337,6 +345,83 @@
                 </tr>
               </thead>
               <tbody id="efficiencyTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: ONTIME XE TẢI ============ -->
+      <div class="page" id="page-ontime">
+        <div class="kpi-grid" id="ontimeKPIs"></div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span class="dot" style="background:var(--accent)"></span> Xu hướng Ontime theo tuần</div>
+            <canvas id="chartOntimeTrend"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span class="dot" style="background:var(--purple)"></span> Ontime theo nhóm tuyến (mới nhất)</div>
+            <canvas id="chartOntimeGroup"></canvas>
+          </div>
+        </div>
+        <div class="table-card">
+          <div class="table-header">
+            <h3>⏱️ Tỷ lệ đúng giờ theo tuần</h3>
+          </div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead id="ontimeTableHead"></thead>
+              <tbody id="ontimeTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: BTBD (BẢO TRÌ - SỬA CHỮA) ============ -->
+      <div class="page" id="page-btbd">
+        <div class="kpi-grid" id="btbdKPIs"></div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span class="dot" style="background:var(--accent)"></span> Phân bổ theo nội dung</div>
+            <canvas id="chartBTBDContent"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span class="dot" style="background:var(--purple)"></span> Top xe vào xưởng nhiều nhất</div>
+            <canvas id="chartBTBDTop"></canvas>
+          </div>
+        </div>
+        <div class="table-card">
+          <div class="table-header">
+            <h3>🔧 Lịch sử bảo trì - sửa chữa</h3>
+            <div class="filter-group">
+              <select class="filter-select" id="filterBTBDContent" onchange="renderBTBDTable()">
+                <option value="">Tất cả nội dung</option>
+              </select>
+              <select class="filter-select" id="filterBTBDStatus" onchange="renderBTBDTable()">
+                <option value="">Tất cả trạng thái</option>
+                <option value="in">Đang ở xưởng</option>
+                <option value="done">Hoàn thành</option>
+              </select>
+              <div class="table-search">
+                🔍<input type="text" placeholder="Tìm biển số..." id="searchBTBD" oninput="renderBTBDTable()">
+              </div>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>BKS</th>
+                  <th>Tải trọng/Hãng</th>
+                  <th>ODO</th>
+                  <th>Ngày vào xưởng</th>
+                  <th>Nội dung</th>
+                  <th>Hạng mục</th>
+                  <th>Gara</th>
+                  <th>Ngày ra xưởng</th>
+                  <th>Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="btbdTableBody"></tbody>
             </table>
           </div>
         </div>

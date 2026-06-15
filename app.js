@@ -7,12 +7,14 @@ function navigateTo(page) {
   const titles = {
     dashboard:'📊 Dashboard Tổng quan', vehicles:'🚛 Thông tin xe', schedule:'📋 Lịch Tải',
     fines:'🚨 Phạt Nguội', efficiency:'📊 Hiệu suất xe', staff:'👥 Nhân sự',
-    reinforcement:'📦 Tăng cường Lấy'
+    reinforcement:'📦 Tăng cường Lấy', ontime:'⏱️ Ontime xe tải', btbd:'🔧 Bảo trì - Sửa chữa (BTBD)'
   };
   document.getElementById('pageTitle').textContent = titles[page] || '';
   if (page === 'dashboard' && !window._dashChartsRendered) { renderDashboardCharts(); window._dashChartsRendered = true; }
   if (page === 'efficiency' && !window._effChartsRendered) { renderEfficiencyCharts(); window._effChartsRendered = true; }
   if (page === 'staff' && !window._staffChartsRendered) { renderStaffCharts(); window._staffChartsRendered = true; }
+  if (page === 'ontime' && !window._ontimeChartsRendered) { renderOntimeCharts(); window._ontimeChartsRendered = true; }
+  if (page === 'btbd' && !window._btbdChartsRendered) { renderBTBDCharts(); window._btbdChartsRendered = true; }
 }
 
 // === CLOCK ===
@@ -539,6 +541,167 @@ function renderReinforcementTable() {
   }).join('');
 }
 
+// ==================== PAGE: ONTIME XE TẢI ====================
+function otPct(v) { return (typeof v === 'number') ? (v * 100).toFixed(1) + '%' : '-'; }
+
+function renderOntime() {
+  const o = DATA.ontime || { groups: [], weeks: [], weekly: {}, periods: [] };
+  const el = document.getElementById('ontimeKPIs');
+  if (!el) return;
+  const weeks = o.weeks || [];
+  const last = weeks.length - 1;
+  const totalW = (o.weekly && o.weekly['TOTAL']) || [];
+  const totalPeriod = (o.periods || []).find(p => p.name === 'TOTAL');
+  const lastVol = totalPeriod && totalPeriod.pairs.length ? totalPeriod.pairs[totalPeriod.pairs.length - 1].vol : null;
+  const otVal = last >= 0 ? totalW[last] : null;
+
+  const kpis = [
+    { l: 'Ontime tổng (' + (weeks[last] || 'mới nhất') + ')', v: otPct(otVal), c: (otVal != null && otVal >= 0.95) ? 'green' : 'orange', i: '⏱️' },
+    { l: 'SL chuyến (kỳ mới nhất)', v: lastVol != null ? fmt(lastVol) : '-', c: 'blue', i: '🚚' }
+  ];
+  (o.groups || []).forEach(g => {
+    const arr = o.weekly[g] || [];
+    const v = last >= 0 ? arr[last] : null;
+    kpis.push({ l: g, v: otPct(v), c: (v != null && v >= 0.95) ? 'green' : (v != null && v >= 0.9) ? 'cyan' : 'red', i: '📍' });
+  });
+  el.innerHTML = makeKPI(kpis);
+
+  const head = document.getElementById('ontimeTableHead');
+  const body = document.getElementById('ontimeTableBody');
+  if (head && body) {
+    head.innerHTML = '<tr><th>Nhóm tuyến</th>' + weeks.map(w => '<th>' + escapeHTML(w) + '</th>').join('') + '</tr>';
+    const names = (o.groups || []).concat(o.weekly && o.weekly['TOTAL'] ? ['TOTAL'] : []);
+    body.innerHTML = names.map(n => {
+      const arr = (o.weekly && o.weekly[n]) || [];
+      return '<tr><td style="font-weight:600;color:var(--text-primary)">' + escapeHTML(n) + '</td>' +
+        weeks.map((w, i) => {
+          const v = arr[i];
+          const cls = (v == null) ? '' : v >= 0.95 ? 'assigned' : v >= 0.9 ? 'unassigned' : 'breakdown';
+          return '<td>' + (v == null ? '-' : '<span class="status ' + cls + '">' + (v * 100).toFixed(1) + '%</span>') + '</td>';
+        }).join('') + '</tr>';
+    }).join('');
+  }
+}
+
+function renderOntimeCharts() {
+  destroyChartIfExists('chartOntimeTrend');
+  destroyChartIfExists('chartOntimeGroup');
+  const o = DATA.ontime || { groups: [], weeks: [], weekly: {} };
+  const weeks = o.weeks || [];
+
+  const trendEl = document.getElementById('chartOntimeTrend');
+  if (trendEl && weeks.length) {
+    const series = (o.groups || []).concat(o.weekly && o.weekly['TOTAL'] ? ['TOTAL'] : []);
+    new Chart(trendEl, {
+      type: 'line',
+      data: {
+        labels: weeks,
+        datasets: series.map((g, i) => ({
+          label: g,
+          data: ((o.weekly && o.weekly[g]) || []).map(v => v == null ? null : Math.round(v * 1000) / 10),
+          borderColor: CHART_COLORS[i % CHART_COLORS.length],
+          backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+          tension: 0.3, fill: false, borderWidth: g === 'TOTAL' ? 3 : 2, pointRadius: 3
+        }))
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', padding: 12 } } }, scales: { y: { ticks: { callback: v => v + '%' } } } }
+    });
+  }
+
+  const grpEl = document.getElementById('chartOntimeGroup');
+  if (grpEl && weeks.length) {
+    const last = weeks.length - 1;
+    const groups = o.groups || [];
+    new Chart(grpEl, {
+      type: 'bar',
+      data: {
+        labels: groups,
+        datasets: [{ label: '%OT (' + (weeks[last] || '') + ')', data: groups.map(g => { const v = ((o.weekly && o.weekly[g]) || [])[last]; return v == null ? 0 : Math.round(v * 1000) / 10; }), backgroundColor: CHART_COLORS.slice(0, groups.length), borderRadius: 6 }]
+      },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false, ticks: { callback: v => v + '%' } } } }
+    });
+  }
+}
+
+// ==================== PAGE: BTBD (BẢO TRÌ - SỬA CHỮA) ====================
+function btbdDate(v) { if (v == null || v === '') return '-'; return String(v).replace(/\s*00:00(:00)?$/, ''); }
+
+function renderBTBD() {
+  const d = DATA.btbd || [];
+  const el = document.getElementById('btbdKPIs');
+  if (!el) return;
+  const total = d.length;
+  const uniquePlates = new Set(d.map(x => x.plate).filter(Boolean)).size;
+  const inGarage = d.filter(x => !x.outDate).length;
+  const incident = d.filter(x => x.content && String(x.content).toLowerCase().includes('sự cố')).length;
+  const totalHours = d.reduce((s, x) => s + (typeof x.totalHours === 'number' ? x.totalHours : 0), 0);
+
+  el.innerHTML = makeKPI([
+    { l: 'Tổng lượt BTBD', v: fmt(total), c: 'blue', i: '🔧' },
+    { l: 'Số xe', v: fmt(uniquePlates), c: 'cyan', i: '🚛' },
+    { l: 'Đang ở xưởng', v: fmt(inGarage), c: inGarage > 0 ? 'orange' : 'green', i: '🏭' },
+    { l: 'Sự cố', v: fmt(incident), c: incident > 0 ? 'red' : 'green', i: '⚠️' },
+    { l: 'Tổng giờ BTBD', v: totalHours ? fmt(totalHours) : '-', c: 'purple', i: '⏱️' }
+  ]);
+
+  const contents = [...new Set(d.map(x => x.content).filter(Boolean))].sort();
+  populateSelect('filterBTBDContent', contents);
+  renderBTBDTable();
+}
+
+function renderBTBDTable() {
+  const cF = document.getElementById('filterBTBDContent').value;
+  const sF = document.getElementById('filterBTBDStatus').value;
+  const search = (document.getElementById('searchBTBD').value || '').toLowerCase();
+  let data = DATA.btbd || [];
+  if (cF) data = data.filter(x => x.content === cF);
+  if (sF === 'in') data = data.filter(x => !x.outDate);
+  else if (sF === 'done') data = data.filter(x => x.outDate);
+  if (search) data = data.filter(x => (x.plate || '').toLowerCase().includes(search));
+
+  document.getElementById('btbdTableBody').innerHTML = data.slice(0, 200).map(x => {
+    const done = !!x.outDate;
+    const stCls = done ? 'assigned' : 'unassigned';
+    const stTxt = done ? 'Hoàn thành' : 'Đang xử lý';
+    return `<tr>
+      <td style="font-weight:600;color:var(--text-primary)">${escapeHTML(x.plate || '')}</td>
+      <td>${escapeHTML(x.vehicleInfo || '')}</td>
+      <td>${x.odo != null ? escapeHTML(x.odo) : '-'}</td>
+      <td>${escapeHTML(btbdDate(x.inDate))}</td>
+      <td>${escapeHTML(x.content || '')}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis" title="${escapeHTML(x.detail || x.category || '')}">${escapeHTML(x.category || x.detail || '')}</td>
+      <td>${escapeHTML(x.garage || '')}</td>
+      <td>${escapeHTML(btbdDate(x.outDate))}</td>
+      <td><span class="status ${stCls}">${stTxt}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderBTBDCharts() {
+  destroyChartIfExists('chartBTBDContent');
+  destroyChartIfExists('chartBTBDTop');
+  const d = DATA.btbd || [];
+
+  const cStats = {};
+  d.forEach(x => { const k = x.content || 'Khác'; cStats[k] = (cStats[k] || 0) + 1; });
+  const cEl = document.getElementById('chartBTBDContent');
+  if (cEl) new Chart(cEl, {
+    type: 'doughnut',
+    data: { labels: Object.keys(cStats), datasets: [{ data: Object.values(cStats), backgroundColor: CHART_COLORS, borderWidth: 0, hoverOffset: 8 }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', padding: 12 } } } }
+  });
+
+  const pStats = {};
+  d.forEach(x => { if (x.plate) pStats[x.plate] = (pStats[x.plate] || 0) + 1; });
+  const top = Object.keys(pStats).sort((a, b) => pStats[b] - pStats[a]).slice(0, 8);
+  const tEl = document.getElementById('chartBTBDTop');
+  if (tEl) new Chart(tEl, {
+    type: 'bar',
+    data: { labels: top, datasets: [{ label: 'Số lượt', data: top.map(p => pStats[p]), backgroundColor: CHART_COLORS, borderRadius: 6 }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
 // === GOOGLE SHEET SYNC SYSTEM & INIT ===
 // === GOOGLE SHEET SYNC MODULE ===
 function destroyChartIfExists(canvasId) {
@@ -557,9 +720,10 @@ function destroyChartIfExists(canvasId) {
 
 function destroyAllCharts() {
   const chartIds = [
-    'chartDashVehicle', 'chartDashStaff', 'chartDashEfficiency', 
+    'chartDashVehicle', 'chartDashStaff', 'chartDashEfficiency',
     'chartDashReinf', 'chartDashSupplier', 'chartEfficiency', 'chartOpStatus',
-    'chartPositions', 'chartDriverStatus'
+    'chartPositions', 'chartDriverStatus', 'chartOntimeTrend', 'chartOntimeGroup',
+    'chartBTBDContent', 'chartBTBDTop'
   ];
   chartIds.forEach(destroyChartIfExists);
 }
@@ -615,6 +779,8 @@ function loadCachedFullData() {
       if (parsed.efficiency) DATA.efficiency = parsed.efficiency;
       if (parsed.drivers) DATA.drivers = parsed.drivers;
       if (parsed.reinforcement) DATA.reinforcement = parsed.reinforcement;
+      if (parsed.ontime) DATA.ontime = parsed.ontime;
+      if (parsed.btbd) DATA.btbd = parsed.btbd;
       setTimeout(() => updateGlobalSyncStatus(cachedTime), 50);
     } else {
       setTimeout(() => updateGlobalSyncStatus(null), 50);
@@ -624,37 +790,50 @@ function loadCachedFullData() {
   }
 }
 
-async function fetchWithProxy(url) {
-  // Try corsproxy.io first (fast and reliable)
-  try {
-    const res = await fetch('https://corsproxy.io/?' + encodeURIComponent(url));
-    if (res.ok) return res;
-  } catch (e) {
-    console.warn('corsproxy.io failed, trying allorigins...', e);
-  }
-
-  // Try allorigins as secondary backup
-  try {
-    const res = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
-    if (res.ok) return res;
-  } catch (e) {
-    console.warn('allorigins failed, trying direct fetch...', e);
-  }
-
-  // Try direct fetch as last resort
-  return await fetch(url);
-}
-
-function getExportUrl(userUrl) {
-  const defaultUrl = 'https://docs.google.com/spreadsheets/d/1n__ebFqgiGQSIEh0xncDCvxYcInsbVQQc0TbSQndz70/edit?gid=772669565';
-  const url = userUrl || localStorage.getItem('custom_sheet_url') || defaultUrl;
-  
+// Trích xuất ID Google Sheet từ URL (mặc định hoặc do người dùng đặt)
+function getSheetId(userUrl) {
+  const defaultId = '1n__ebFqgiGQSIEh0xncDCvxYcInsbVQQc0TbSQndz70';
+  const url = userUrl || localStorage.getItem('custom_sheet_url') || '';
   const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  if (match && match[1]) {
-    return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`;
-  }
-  return 'https://docs.google.com/spreadsheets/d/1n__ebFqgiGQSIEh0xncDCvxYcInsbVQQc0TbSQndz70/export?format=xlsx';
+  return (match && match[1]) ? match[1] : defaultId;
 }
+
+// Tự nhận diện cột ngày/giờ theo tên tiêu đề để chuyển số serial -> Date
+const SYNC_DATE_RE = /ngày|hạn|giờ|thời gian|tới điểm|rời điểm|\bdate\b|\btime\b/i;
+
+function syncSerialToDate(v) {
+  if (typeof v !== 'number') return v;
+  try {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (d && d.y) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, Math.floor(d.S || 0));
+  } catch (e) {}
+  return v;
+}
+
+// Tải 1 sheet qua gviz CSV của Google (hỗ trợ CORS trực tiếp, không cần proxy)
+async function fetchSheetAsWorksheet(id, name) {
+  const url = 'https://docs.google.com/spreadsheets/d/' + id + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(name);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(name + ': HTTP ' + res.status);
+  const text = await res.text();
+  const wb = XLSX.read(text, { type: 'string' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null });
+  const headers = rows[0] || [];
+  const dateCols = headers
+    .map((h, i) => SYNC_DATE_RE.test(String(h == null ? '' : h)) ? i : -1)
+    .filter(i => i >= 0);
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    for (const c of dateCols) {
+      if (typeof row[c] === 'number') row[c] = syncSerialToDate(row[c]);
+    }
+  }
+  return XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+}
+
+const SYNC_SHEET_NAMES = ['Thông tin xe', 'Lịch tải', 'Phạt nguội', 'Hiệu suất sử dụng xe', 'Nhân sự', 'Tải tăng cường Lấy'];
+const SYNC_OPTIONAL_SHEETS = ['Ontime xe tải', 'BTBD'];
 
 async function syncGoogleSheetRealtime(silent = false) {
   const statusTime = document.getElementById('globalSyncTime');
@@ -663,23 +842,26 @@ async function syncGoogleSheetRealtime(silent = false) {
     statusTime.style.color = '#f59e0b';
   }
 
-  const customUrl = localStorage.getItem('custom_sheet_url');
-  const sheetUrl = getExportUrl(customUrl);
+  const id = getSheetId(localStorage.getItem('custom_sheet_url'));
 
   try {
-    const response = await fetchWithProxy(sheetUrl);
-    if (!response.ok) {
-      throw new Error('Mã phản hồi từ server: ' + response.status);
+    const workbook = { SheetNames: [], Sheets: {} };
+    const allNames = SYNC_SHEET_NAMES.concat(SYNC_OPTIONAL_SHEETS);
+    const results = await Promise.all(
+      allNames.map(n =>
+        fetchSheetAsWorksheet(id, n).then(ws => ({ n, ws })).catch(e => ({ n, err: e }))
+      )
+    );
+    for (const r of results) {
+      if (r.ws) { workbook.SheetNames.push(r.n); workbook.Sheets[r.n] = r.ws; }
+      else { console.warn('Sync sheet thất bại:', r.n, r.err && r.err.message); }
+    }
+    const missingCore = SYNC_SHEET_NAMES.filter(n => !workbook.Sheets[n]);
+    if (missingCore.length) {
+      throw new Error('Thiếu sheet: ' + missingCore.join(', ') + '. Kiểm tra Google Sheet đã ở chế độ "Bất kỳ ai có đường liên kết đều xem được".');
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const data = new Uint8Array(arrayBuffer);
-    const workbook = XLSX.read(data, {type: 'array', cellDates: true, cellNF: false, cellText: false});
-    
     processAndApplyWorkbook(workbook);
-    // if (!silent) {
-    //   alert('Đồng bộ toàn bộ dữ liệu từ Google Sheet Realtime thành công!');
-    // }
   } catch (error) {
     console.error('Realtime Sync error:', error);
     if (statusTime) {
@@ -693,7 +875,7 @@ async function syncGoogleSheetRealtime(silent = false) {
       }
     }
     if (!silent) {
-      alert('Không thể tự động tải dữ liệu trực tuyến: ' + error.message + '\n\nNếu gặp lỗi mạng hoặc CORS, bạn hãy sử dụng file "Mo_Bao_Cao.bat" để tự động tải dữ liệu thông qua script Python offline cực kỳ ổn định nhé!');
+      alert('Không thể tải dữ liệu trực tuyến: ' + error.message + '\n\nBạn có thể dùng nút "📂 Import file Excel" để nạp dữ liệu từ file tải về.');
     }
   }
 }
@@ -710,8 +892,10 @@ function changeSheetLink() {
     alert('Đã khôi phục về link Google Sheet mặc định!');
     syncGoogleSheetRealtime(false);
   } else {
-    if (!trimmed.includes('docs.google.com/spreadsheets')) {
-      alert('Đường dẫn không hợp lệ! Vui lòng nhập đúng link Google Sheet.');
+    let sheetHost = '';
+    try { sheetHost = new URL(trimmed).hostname; } catch (e) { sheetHost = ''; }
+    if (sheetHost !== 'docs.google.com' || !trimmed.includes('/spreadsheets/')) {
+      alert('Đường dẫn không hợp lệ! Chỉ chấp nhận link Google Sheet (docs.google.com).');
       return;
     }
     localStorage.setItem('custom_sheet_url', trimmed);
@@ -894,6 +1078,72 @@ function processAndApplyWorkbook(workbook) {
     });
   }
 
+  // 7. ONTIME (Ontime xe tải) - pivot gồm 2 bảng trong 1 sheet
+  const ontime = { groups: [], weeks: [], weekly: {}, periods: [] };
+  const oSheet = workbook.Sheets['Ontime xe tải'];
+  if (oSheet) {
+    const oRows = XLSX.utils.sheet_to_json(oSheet, { header: 1, raw: true, defval: null });
+    // Tìm dòng tiêu đề bảng thứ 2 (dòng có cột đầu = 'Tuyến', sau dòng 0)
+    let splitIdx = -1;
+    for (let i = 1; i < oRows.length; i++) {
+      if (oRows[i] && String(oRows[i][0]).trim() === 'Tuyến') { splitIdx = i; break; }
+    }
+    // Bảng 1: SL chuyến + %OT theo nhiều kỳ
+    const end = splitIdx >= 0 ? splitIdx : oRows.length;
+    for (let i = 1; i < end; i++) {
+      const r = oRows[i]; if (!r || !r[0]) continue;
+      const name = String(r[0]).trim();
+      const pairs = [];
+      for (let c = 1; c + 1 < r.length; c += 2) {
+        if (typeof r[c] === 'number' || typeof r[c + 1] === 'number') pairs.push({ vol: r[c], ot: r[c + 1] });
+      }
+      ontime.periods.push({ name, pairs });
+      if (name && name !== 'TOTAL') ontime.groups.push(name);
+    }
+    // Bảng 2: %OT theo tuần
+    if (splitIdx >= 0) {
+      const weekRow = oRows[splitIdx] || [];
+      const weekCols = [];
+      for (let c = 1; c < weekRow.length; c++) {
+        if (weekRow[c] !== null && String(weekRow[c]).trim() !== '') weekCols.push(c);
+      }
+      ontime.weeks = weekCols.map(c => String(weekRow[c]).trim());
+      for (let i = splitIdx + 1; i < oRows.length; i++) {
+        const r = oRows[i]; if (!r || !r[0]) continue;
+        const name = String(r[0]).trim();
+        ontime.weekly[name] = weekCols.map(c => (typeof r[c] === 'number' ? r[c] : null));
+      }
+    }
+  }
+
+  // 8. BTBD (Bảo trì - Sửa chữa)
+  const btbd = [];
+  const bSheet = workbook.Sheets['BTBD'];
+  if (bSheet) {
+    const bRows = XLSX.utils.sheet_to_json(bSheet, { header: 1, raw: true, defval: null });
+    for (let i = 1; i < bRows.length; i++) {
+      const row = bRows[i] || [];
+      const plate = row[0];
+      if (!plate) continue;
+      btbd.push({
+        plate: ser(plate),
+        vehicleInfo: ser(row[1]),
+        yearUse: ser(row[2]),
+        odo: ser(row[3]),
+        kmNextBD: ser(row[4]),
+        inDate: ser(row[5]),
+        content: ser(row[6]),
+        category: ser(row[7]),
+        detail: ser(row[8]),
+        garage: ser(row[9]),
+        expectedDate: ser(row[10]),
+        outDate: ser(row[11]),
+        totalHours: ser(row[12]),
+        note: ser(row[13]),
+      });
+    }
+  }
+
   // Update memory
   DATA.vehicles = vehicles;
   DATA.routes = routes;
@@ -901,12 +1151,14 @@ function processAndApplyWorkbook(workbook) {
   DATA.efficiency = efficiency;
   DATA.drivers = drivers;
   DATA.reinforcement = reinforcement;
+  DATA.ontime = ontime;
+  DATA.btbd = btbd;
 
   // Persist to localStorage
   const now = new Date();
   const timeStr = now.toLocaleTimeString('vi-VN') + ' (' + now.toLocaleDateString('vi-VN') + ')';
   localStorage.setItem('cached_full_data', JSON.stringify({
-    vehicles, routes, fines, efficiency, drivers, reinforcement
+    vehicles, routes, fines, efficiency, drivers, reinforcement, ontime, btbd
   }));
   localStorage.setItem('cached_full_time', timeStr);
 
@@ -917,6 +1169,8 @@ function processAndApplyWorkbook(workbook) {
   window._dashChartsRendered = false;
   window._effChartsRendered = false;
   window._staffChartsRendered = false;
+  window._ontimeChartsRendered = false;
+  window._btbdChartsRendered = false;
 
   // Refresh current visible page
   const activePageItem = document.querySelector('.nav-item.active');
@@ -929,6 +1183,8 @@ function processAndApplyWorkbook(workbook) {
   renderEfficiency();
   renderStaff();
   renderReinforcement();
+  renderOntime();
+  renderBTBD();
 
   destroyAllCharts();
   navigateTo(pageName);
@@ -975,6 +1231,8 @@ document.addEventListener('DOMContentLoaded', () => {
   renderEfficiency();
   renderStaff();
   renderReinforcement();
+  renderOntime();
+  renderBTBD();
 
   // Tự động lấy dữ liệu realtime khi tải trang (chế độ chạy ngầm không hiện thông báo thành công)
   setTimeout(() => {
@@ -986,3 +1244,4 @@ document.addEventListener('DOMContentLoaded', () => {
     syncGoogleSheetRealtime(true);
   }, 60000);
 });
+// build: ontime + btbd modules
