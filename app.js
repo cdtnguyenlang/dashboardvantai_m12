@@ -551,14 +551,16 @@ function renderOntime() {
   const weeks = o.weeks || [];
   const last = weeks.length - 1;
   const totalW = (o.weekly && o.weekly['TOTAL']) || [];
-  const totalPeriod = (o.periods || []).find(p => p.name === 'TOTAL');
-  const lastVol = totalPeriod && totalPeriod.pairs.length ? totalPeriod.pairs[totalPeriod.pairs.length - 1].vol : null;
   const otVal = last >= 0 ? totalW[last] : null;
+  const prevVal = last >= 1 ? totalW[last - 1] : null;
 
   const kpis = [
-    { l: 'Ontime tổng (' + (weeks[last] || 'mới nhất') + ')', v: otPct(otVal), c: (otVal != null && otVal >= 0.95) ? 'green' : 'orange', i: '⏱️' },
-    { l: 'SL chuyến (kỳ mới nhất)', v: lastVol != null ? fmt(lastVol) : '-', c: 'blue', i: '🚚' }
+    { l: 'Ontime tổng (' + (weeks[last] || 'mới nhất') + ')', v: otPct(otVal), c: (otVal != null && otVal >= 0.95) ? 'green' : (otVal != null && otVal >= 0.9) ? 'orange' : 'red', i: '⏱️' }
   ];
+  if (otVal != null && prevVal != null) {
+    const diff = (otVal - prevVal) * 100;
+    kpis.push({ l: 'So với ' + (weeks[last - 1] || 'tuần trước'), v: (diff >= 0 ? '+' : '') + diff.toFixed(1) + ' điểm', c: diff >= 0 ? 'green' : 'red', i: diff >= 0 ? '📈' : '📉' });
+  }
   (o.groups || []).forEach(g => {
     const arr = o.weekly[g] || [];
     const v = last >= 0 ? arr[last] : null;
@@ -1078,40 +1080,36 @@ function processAndApplyWorkbook(workbook) {
     });
   }
 
-  // 7. ONTIME (Ontime xe tải) - pivot gồm 2 bảng trong 1 sheet
-  const ontime = { groups: [], weeks: [], weekly: {}, periods: [] };
+  // 7. ONTIME (Ontime xe tải) - lấy bảng "Ontime theo Tuần"
+  const ontime = { groups: [], weeks: [], weekly: {} };
   const oSheet = workbook.Sheets['Ontime xe tải'];
   if (oSheet) {
     const oRows = XLSX.utils.sheet_to_json(oSheet, { header: 1, raw: true, defval: null });
-    // Tìm dòng tiêu đề bảng thứ 2 (dòng có cột đầu = 'Tuyến', sau dòng 0)
-    let splitIdx = -1;
-    for (let i = 1; i < oRows.length; i++) {
-      if (oRows[i] && String(oRows[i][0]).trim() === 'Tuyến') { splitIdx = i; break; }
-    }
-    // Bảng 1: SL chuyến + %OT theo nhiều kỳ
-    const end = splitIdx >= 0 ? splitIdx : oRows.length;
-    for (let i = 1; i < end; i++) {
-      const r = oRows[i]; if (!r || !r[0]) continue;
-      const name = String(r[0]).trim();
-      const pairs = [];
-      for (let c = 1; c + 1 < r.length; c += 2) {
-        if (typeof r[c] === 'number' || typeof r[c + 1] === 'number') pairs.push({ vol: r[c], ot: r[c + 1] });
+    // Tìm dòng tiêu đề 'Tuyến' của bảng theo tuần (nhãn cột có chứa 'W' như W18...);
+    // nếu không thấy thì lấy dòng 'Tuyến' đầu tiên làm phương án dự phòng.
+    let headerIdx = -1;
+    for (let i = 0; i < oRows.length; i++) {
+      const r = oRows[i]; if (!r) continue;
+      if (String(r[0] == null ? '' : r[0]).trim() === 'Tuyến') {
+        const labels = r.slice(1).filter(x => x !== null && String(x).trim() !== '');
+        if (labels.some(x => /w/i.test(String(x)))) { headerIdx = i; break; }
+        if (headerIdx < 0) headerIdx = i;
       }
-      ontime.periods.push({ name, pairs });
-      if (name && name !== 'TOTAL') ontime.groups.push(name);
     }
-    // Bảng 2: %OT theo tuần
-    if (splitIdx >= 0) {
-      const weekRow = oRows[splitIdx] || [];
-      const weekCols = [];
-      for (let c = 1; c < weekRow.length; c++) {
-        if (weekRow[c] !== null && String(weekRow[c]).trim() !== '') weekCols.push(c);
+    if (headerIdx >= 0) {
+      const headerRow = oRows[headerIdx] || [];
+      const cols = [];
+      for (let c = 1; c < headerRow.length; c++) {
+        if (headerRow[c] !== null && String(headerRow[c]).trim() !== '') cols.push(c);
       }
-      ontime.weeks = weekCols.map(c => String(weekRow[c]).trim());
-      for (let i = splitIdx + 1; i < oRows.length; i++) {
-        const r = oRows[i]; if (!r || !r[0]) continue;
-        const name = String(r[0]).trim();
-        ontime.weekly[name] = weekCols.map(c => (typeof r[c] === 'number' ? r[c] : null));
+      ontime.weeks = cols.map(c => String(headerRow[c]).trim());
+      for (let i = headerIdx + 1; i < oRows.length; i++) {
+        const r = oRows[i]; if (!r) continue;
+        const name = String(r[0] == null ? '' : r[0]).trim();
+        if (!name) continue;
+        if (name === 'Tuyến' || /ontime theo/i.test(name)) break;
+        ontime.weekly[name] = cols.map(c => (typeof r[c] === 'number' ? r[c] : null));
+        if (name !== 'TOTAL') ontime.groups.push(name);
       }
     }
   }
